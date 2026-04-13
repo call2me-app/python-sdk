@@ -9,14 +9,15 @@ Build, deploy, and manage AI voice agents that handle real phone calls, extract 
 
 ## Features
 
-- **Voice Agents** — Create and manage AI agents with custom voices and personalities
-- **Phone & Web Calls** — Handle inbound/outbound calls via SIP or browser
-- **30+ AI Models** — GPT, Claude, Gemini, DeepSeek, Llama, and more
+- **14 API Resources** — Full coverage of the Call2Me REST API
+- **Voice Agents** — Create agents with 30+ AI models and custom voices
+- **Phone & Web Calls** — Inbound/outbound via SIP, browser, or chat widget
+- **Campaigns** — Bulk outbound calling with CSV upload
+- **Scheduled Calls** — Book follow-ups at specific dates
+- **Post-Call Intelligence** — Auto-extract data and trigger actions
 - **Knowledge Base** — RAG-powered answers from your documents
-- **Campaigns** — Bulk outbound calling at scale
-- **Scheduled Calls** — Book follow-up calls automatically
-- **Post-Call Intelligence** — Extract structured data from every conversation
-- **Multi-Language** — Turkish, English, German, French, Spanish, Arabic
+- **White-Label** — Custom branding, domain, and tenant management
+- **Payments** — Checkout, saved cards, auto-charge
 
 ## Installation
 
@@ -30,7 +31,7 @@ Requires Python 3.8+
 
 1. Sign up at [dashboard.call2me.app](https://dashboard.call2me.app/signup) — you get **$10 free credits**
 2. Go to **API Keys** in the dashboard
-3. Click **Create API Key** and copy it
+3. Click **Create API Key** and copy your `sk_call2me_...` key
 
 ## Quick Start
 
@@ -39,119 +40,182 @@ from call2me import Call2Me
 
 client = Call2Me(api_key="sk_call2me_...")
 
-# Create a voice agent
+# Create an agent
 agent = client.agents.create(
-    agent_name="Customer Support",
+    agent_name="Sales Agent",
     voice_id="elevenlabs-selin",
     language="tr-TR",
-    system_prompt="You are a friendly customer support agent for our company."
+    system_prompt="You are a friendly sales agent."
 )
-print(f"Agent created: {agent['agent_id']}")
+print(f"Agent: {agent['agent_id']}")
+
+# List calls
+for call in client.calls.list():
+    print(f"{call['call_id']} — {call['call_status']}")
+
+# Check balance
+print(f"Balance: ${client.wallet.balance()['balance_usd']}")
 ```
 
-## Usage Examples
+## Full API Reference
 
-### List Agents
-
+### Agents
 ```python
-agents = client.agents.list()
-for agent in agents:
-    print(f"{agent['agent_id']} — {agent['agent_name']} ({agent['status']})")
+client.agents.list(limit=100, offset=0)
+client.agents.get("agent_id")
+client.agents.create(agent_name="My Agent", voice_id="elevenlabs-selin", system_prompt="...")
+client.agents.update("agent_id", agent_name="New Name")
+client.agents.delete("agent_id")
+client.agents.duplicate("agent_id")
+client.agents.stats("agent_id", days=30)
+client.agents.global_stats()
 ```
 
-### Get Call History
-
+### Calls
 ```python
-calls = client.calls.list(limit=10)
-for call in calls:
-    print(f"{call['call_id']} | {call['direction']} | {call['call_status']} | {call.get('duration_ms', 0)}ms")
+client.calls.list(limit=50, agent_id="agent_id")
+client.calls.get("call_id")
+client.calls.end("call_id")
+client.calls.recording("call_id")
 ```
 
 ### Knowledge Base
-
 ```python
-# Create a knowledge base
-kb = client.knowledge_bases.create(
-    name="Product FAQ",
-    description="Frequently asked questions about our products"
-)
-
-# Query it
-results = client.knowledge_bases.query(kb['id'], "What is the return policy?")
+client.knowledge_bases.list()
+client.knowledge_bases.get("kb_id")
+client.knowledge_bases.create(name="FAQ", description="Product FAQ")
+client.knowledge_bases.delete("kb_id")
+client.knowledge_bases.add_source("kb_id", source_type="text", content="...", name="intro")
+client.knowledge_bases.query("kb_id", "What is the return policy?", top_k=5)
 ```
 
 ### Campaigns
-
 ```python
-# Create a campaign
-campaign = client.campaigns.create(
-    name="Spring Sale Outreach",
-    agent_id="agent_abc123",
-    from_number="+908501234567"
-)
-
-# Start calling
-client.campaigns.start(campaign['id'])
+client.campaigns.list()
+client.campaigns.get("campaign_id")
+client.campaigns.create(name="Spring Sale", agent_id="agent_id", from_number="+908501234567")
+client.campaigns.update("campaign_id", name="Updated")
+client.campaigns.delete("campaign_id")
+client.campaigns.upload_csv("campaign_id", "/path/to/contacts.csv")
+client.campaigns.start("campaign_id")
+client.campaigns.pause("campaign_id")
+client.campaigns.resume("campaign_id")
+client.campaigns.cancel("campaign_id")
+client.campaigns.contacts("campaign_id")
 ```
 
 ### Scheduled Calls
-
 ```python
-# Schedule a follow-up call
-schedule = client.schedules.create(
-    agent_id="agent_abc123",
-    phone_number="+905551234567",
-    scheduled_at="2026-04-15T10:00:00+03:00",
-    timezone="Europe/Istanbul"
-)
+client.schedules.list()
+client.schedules.get("schedule_id")
+client.schedules.create(agent_id="agent_id", phone_number="+905551234567", scheduled_at="2026-04-15T10:00:00+03:00", timezone="Europe/Istanbul")
+client.schedules.update("schedule_id", scheduled_at="2026-04-16T14:00:00+03:00")
+client.schedules.delete("schedule_id")
+client.schedules.cancel("schedule_id")
 ```
 
-### Check Balance
-
+### Phone Numbers
 ```python
-balance = client.wallet.balance()
-print(f"Balance: ${balance['balance_usd']}")
-
-# Transaction history
-txns = client.wallet.transactions(limit=5)
+client.phone_numbers.list()
+client.phone_numbers.get("+908501234567")
+client.phone_numbers.create(phone_number="+908501234567", trunk_id="trunk_id")
+client.phone_numbers.update("+908501234567", display_name="Main Line")
+client.phone_numbers.delete("+908501234567")
+client.phone_numbers.bind_agent("+908501234567", "agent_id")
+client.phone_numbers.unbind_agent("+908501234567")
 ```
 
-## API Reference
-
-| Resource | Methods |
-|----------|---------|
-| `client.agents` | `list()`, `get(id)`, `create(...)`, `update(id, ...)`, `delete(id)`, `duplicate(id)` |
-| `client.calls` | `list()`, `get(id)` |
-| `client.knowledge_bases` | `list()`, `create(...)`, `query(id, query)` |
-| `client.wallet` | `balance()`, `transactions()` |
-| `client.campaigns` | `list()`, `create(...)`, `start(id)`, `pause(id)` |
-| `client.schedules` | `list()`, `create(...)` |
-
-## Configuration
-
+### SIP Trunks
 ```python
-# Custom base URL (for self-hosted or testing)
-client = Call2Me(
-    api_key="sk_call2me_...",
-    base_url="https://your-api.example.com"
-)
-
-# Context manager (auto-close)
-with Call2Me(api_key="sk_call2me_...") as client:
-    agents = client.agents.list()
+client.sip_trunks.list()
+client.sip_trunks.get("trunk_id")
+client.sip_trunks.create(name="My Trunk", sip_server="sip.provider.com", sip_username="user", sip_password="pass")
+client.sip_trunks.update("trunk_id", name="Updated")
+client.sip_trunks.delete("trunk_id")
+client.sip_trunks.test("trunk_id")
 ```
 
-## Documentation
+### Wallet & Billing
+```python
+client.wallet.balance()
+client.wallet.transactions(limit=50, offset=0)
+client.wallet.analytics(days=30)
+client.wallet.pricing()
+```
 
-- **Full API Docs**: [call2me.app/docs](https://call2me.app/docs)
+### Payments
+```python
+client.payments.checkout(amount=50.0, currency="USD")
+client.payments.history(limit=50)
+client.payments.saved_cards()
+client.payments.auto_charge()
+client.payments.update_auto_charge(enabled=True, threshold=5.0, amount=50.0)
+```
+
+### API Keys
+```python
+client.api_keys.list()
+client.api_keys.create(name="Production Key")
+client.api_keys.revoke("key_id")
+client.api_keys.delete("key_id")
+client.api_keys.usage("key_id")
+```
+
+### Users & Branding
+```python
+client.users.me()
+client.users.update(full_name="John Doe", company_name="Acme Inc")
+client.users.stats()
+client.users.usage(days=30)
+client.users.daily_usage(days=30)
+client.users.branding()
+client.users.update_branding(app_name="My Platform", primary_color="#6366f1")
+client.users.tenant_members(page=1, per_page=20)
+```
+
+### Widgets
+```python
+client.widgets.list()
+client.widgets.get("widget_id")
+client.widgets.create(agent_id="agent_id", name="Support Widget")
+client.widgets.update("widget_id", welcome_message="Hi!")
+client.widgets.delete("widget_id")
+client.widgets.chat("widget_id", "Hello, I need help")
+```
+
+### Voices
+```python
+client.voices.list()
+client.voices.providers()
+```
+
+### Chats
+```python
+client.chats.list(limit=50)
+client.chats.get("session_id")
+client.chats.send_message("session_id", "Hello!", model="openrouter/auto")
+```
+
+## Error Handling
+
+```python
+import httpx
+
+try:
+    agent = client.agents.get("invalid_id")
+except httpx.HTTPStatusError as e:
+    print(f"Error {e.response.status_code}: {e.response.json()}")
+```
+
+## Links
+
+- **Website**: [call2me.app](https://call2me.app)
+- **Dashboard**: [dashboard.call2me.app](https://dashboard.call2me.app)
+- **API Docs**: [call2me.app/docs](https://call2me.app/docs)
 - **Guides**: [call2me.app/guides](https://call2me.app/guides)
-- **Pricing**: [call2me.app/pricing](https://call2me.app/pricing)
-
-## Support
-
-- Email: [support@call2me.app](mailto:support@call2me.app)
-- Website: [call2me.app](https://call2me.app)
+- **GitHub**: [github.com/call2me-app/python-sdk](https://github.com/call2me-app/python-sdk)
+- **Support**: [support@call2me.app](mailto:support@call2me.app)
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT

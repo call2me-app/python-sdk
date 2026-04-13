@@ -2,5 +2,5 @@
 
 from .client import Call2Me
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __all__ = ["Call2Me", "Agent", "Call", "KnowledgeBase"]
