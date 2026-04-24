@@ -1,0 +1,41 @@
+name: Publish to PyPI
+
+# Tag v* push ⇒ publish. Auth via PyPI Trusted Publisher (OIDC) —
+# no API token in secrets. Configure at:
+#   pypi.org → Account → Publishing → Add publisher:
+#     Owner:            call2me-app
+#     Repository name:  python-sdk
+#     Workflow name:    publish.yml
+#     Environment name: pypi
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/call2me/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify tag matches pyproject version
+        run: |
+          PV=$(grep -E '^version =' pyproject.toml | sed -E 's/version = "([^"]+)"/\1/')
+          TV="${GITHUB_REF_NAME#v}"
+          [ "$PV" = "$TV" ] || { echo "pyproject $PV != tag $TV"; exit 1; }
+      - name: Build
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1

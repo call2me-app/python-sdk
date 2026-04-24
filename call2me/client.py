@@ -35,6 +35,7 @@ class Call2Me:
         self.voices = VoicesResource(self._http)
         self.chats = ChatsResource(self._http)
         self.payments = PaymentsResource(self._http)
+        self.events = EventsResource(self._http)
 
     def close(self):
         self._http.close()
@@ -394,3 +395,38 @@ class PaymentsResource(_Resource):
         if amount is not None:
             data["charge_amount"] = amount
         return self._put("/v1/payments/auto-charge", data)
+
+
+class EventsResource(_Resource):
+    """Report custom events (errors, auth, payments, custom).
+
+    The ingest endpoint is public — it doesn't require the SDK's API key
+    — but a key is still sent so authenticated events inherit the user's
+    higher rate limit (100/min vs 10/min for anon).
+    """
+    def report(self, type: str, message: str, source: str = "api",
+               severity: str = None, meta: Dict = None,
+               tenant: str = None, session_id: str = None,
+               fingerprint: str = None) -> Dict:
+        body = {
+            "type": type,
+            "source": source,
+            "message": message,
+        }
+        if severity: body["severity"] = severity
+        if tenant: body["tenant"] = tenant
+        if session_id: body["session_id"] = session_id
+        if fingerprint: body["fingerprint"] = fingerprint
+        if meta: body["meta"] = meta
+        return self._post("/v1/events", body)
+
+    def query(self, severity: str = None, type: str = None,
+              fingerprint: str = None, hours: int = 24, limit: int = 50) -> Dict:
+        """Admin-only — JWT required rather than API key. SDK users with
+        admin rights can call it if they authenticate via the Authorization
+        header directly."""
+        params = {"hours": hours, "limit": limit}
+        if severity: params["severity"] = severity
+        if type: params["type"] = type
+        if fingerprint: params["fingerprint"] = fingerprint
+        return self._get("/v1/events", **params)
