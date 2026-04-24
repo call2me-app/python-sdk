@@ -241,6 +241,10 @@ except httpx.HTTPStatusError as e:
 
 ## Changelog
 
+### 1.3.1 (2026-04-24)
+- README — publish the 1.3.0 events-resource documentation to PyPI
+  (the 1.3.0 upload shipped the pre-release README by accident).
+
 ### 1.3.0 (2026-04-24)
 - Add `events` resource — `client.events.report()` and `.query()` for
   forwarding errors and business events to the observability pipeline.
