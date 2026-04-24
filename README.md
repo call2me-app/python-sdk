@@ -9,7 +9,7 @@ Build, deploy, and manage AI voice agents that handle real phone calls, extract 
 
 ## Features
 
-- **14 API Resources** — Full coverage of the Call2Me REST API
+- **15 API Resources** — Full coverage of the Call2Me REST API
 - **Voice Agents** — Create agents with 30+ AI models and custom voices
 - **Phone & Web Calls** — Inbound/outbound via SIP, browser, or chat widget
 - **Campaigns** — Bulk outbound calling with CSV upload
@@ -196,6 +196,29 @@ client.chats.get("session_id")
 client.chats.send_message("session_id", "Hello!", model="openrouter/auto")
 ```
 
+### Events
+
+Forward application errors and business events to the Call2Me
+observability pipeline. The POST endpoint is public; sending the API
+key lifts your per-minute ceiling from 10 (anon) to 100.
+
+```python
+client.events.report(
+    type="payment_failed",
+    source="api",
+    message="Paddle rejected the webhook",
+    severity="error",
+    meta={"payment_id": "pay_abc", "provider": "paddle"},
+)
+
+# Admin-only query over archived (error+) events:
+client.events.query(severity="error", hours=24)
+```
+
+Common `type` values: `js_error`, `unhandled_rejection`, `http_5xx`,
+`auth_login`, `auth_signup`, `payment_success`, `payment_failed`,
+`call_started`, `call_ended`, `call_failed`, `agent_crash`.
+
 ## Error Handling
 
 ```python
@@ -215,6 +238,16 @@ except httpx.HTTPStatusError as e:
 - **Guides**: [call2me.app/guides](https://call2me.app/guides)
 - **GitHub**: [github.com/call2me-app/python-sdk](https://github.com/call2me-app/python-sdk)
 - **Support**: [support@call2me.app](mailto:support@call2me.app)
+
+## Changelog
+
+### 1.3.0 (2026-04-24)
+- Add `events` resource — `client.events.report()` and `.query()` for
+  forwarding errors and business events to the observability pipeline.
+- Published via PyPI Trusted Publishing (OIDC, no API token).
+
+### 1.2.0
+- All 14 resources, campaigns, schedules, widgets.
 
 ## License
 
