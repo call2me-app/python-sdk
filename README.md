@@ -29,7 +29,7 @@ Requires Python 3.8+
 
 ## Getting Your API Key
 
-1. Sign up at [dashboard.call2me.app](https://dashboard.call2me.app/signup) — you get **$10 free credits**
+1. Sign up at [dash.call2me.app](https://dash.call2me.app/signup) — you get **$10 free credits**
 2. Go to **API Keys** in the dashboard
 3. Click **Create API Key** and copy your `sk_call2me_...` key
 
@@ -189,6 +189,14 @@ client.voices.list()
 client.voices.providers()
 ```
 
+### Headless voice sessions
+Open an AI voice session with an agent from your own app:
+```python
+s = client.voice_sessions.create("agent_abc123")
+# s = {"token": ..., "url": "wss://livekit.call2me.app", "room_name": ..., "session_limit_sec": 3600}
+# Connect a LiveKit client with s["token"] + s["url"]; the agent auto-joins and talks.
+```
+
 ### Chats
 ```python
 client.chats.list(limit=50)
@@ -233,13 +241,16 @@ except httpx.HTTPStatusError as e:
 ## Links
 
 - **Website**: [call2me.app](https://call2me.app)
-- **Dashboard**: [dashboard.call2me.app](https://dashboard.call2me.app)
+- **Dashboard**: [dash.call2me.app](https://dash.call2me.app)
 - **API Docs**: [call2me.app/docs](https://call2me.app/docs)
 - **Guides**: [call2me.app/guides](https://call2me.app/guides)
 - **GitHub**: [github.com/call2me-app/python-sdk](https://github.com/call2me-app/python-sdk)
 - **Support**: [support@call2me.app](mailto:support@call2me.app)
 
 ## Changelog
+
+### 1.4.0 (2026-07-02)
+- Added `voice_sessions.create(agent_id, context=None)` — open a headless AI voice session (LiveKit token) with an agent.
 
 ### 1.3.1 (2026-04-24)
 - README — publish the 1.3.0 events-resource documentation to PyPI

@@ -36,6 +36,7 @@ class Call2Me:
         self.chats = ChatsResource(self._http)
         self.payments = PaymentsResource(self._http)
         self.events = EventsResource(self._http)
+        self.voice_sessions = VoiceSessionsResource(self._http)
 
     def close(self):
         self._http.close()
@@ -430,3 +431,14 @@ class EventsResource(_Resource):
         if type: params["type"] = type
         if fingerprint: params["fingerprint"] = fingerprint
         return self._get("/v1/events", **params)
+
+
+# ── Voice Sessions ──
+class VoiceSessionsResource(_Resource):
+    def create(self, agent_id: str, context: dict = None) -> Dict:
+        """Open a headless AI voice session with an agent.
+
+        Returns {token, url, room_name, session_limit_sec}. Connect a LiveKit
+        client with the returned token+url; the agent auto-joins and talks.
+        """
+        return self._post("/v1/voice/sessions", {"agent_id": agent_id, "context": context})
