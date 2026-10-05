@@ -35,6 +35,12 @@ class Call2Me:
         self.voices = VoicesResource(self._http)
         self.chats = ChatsResource(self._http)
         self.payments = PaymentsResource(self._http)
+        # 5 Eki 2026'da eklendi: 278 uçtan yalnız 83'ü kapsanıyordu ve
+        # tercümanın 11 ucunun HİÇBİRİ yoktu.
+        self.interpreters = InterpretersResource(self._http)
+        self.numbers = NumbersResource(self._http)
+        self.sms = SmsResource(self._http)
+        self.extension = ExtensionResource(self._http)
         self.events = EventsResource(self._http)
         self.voice_sessions = VoiceSessionsResource(self._http)
         self.end_users = EndUsersResource(self._http)
@@ -48,6 +54,17 @@ class Call2Me:
 
     def __exit__(self, *args):
         self.close()
+
+
+def _temizle(veri: dict) -> dict:
+    """Drop keys whose value is None.
+
+    Optional fields are declared as `None` defaults, but sending an
+    explicit `null` is not the same as omitting the field — some
+    endpoints reject it with a 422. Only what the caller actually set
+    goes on the wire.
+    """
+    return {k: v for k, v in veri.items() if v is not None}
 
 
 class _Resource:
@@ -127,6 +144,34 @@ class AgentsResource(_Resource):
 class CallsResource(_Resource):
     def list(self, limit: int = 50, offset: int = 0, agent_id: str = None) -> List[Dict]:
         return self._get("/v1/calls", limit=limit, offset=offset, agent_id=agent_id)
+
+    def create(
+        self,
+        agent_id: str,
+        to_number: str,
+        from_number: str = None,
+        topic: str = None,
+        metadata: dict = None,
+        dynamic_variables: dict = None,
+    ) -> Dict:
+        """Place a REAL outbound call — `to_number` is dialled and charged.
+
+        `topic` is why the call is being placed; it reaches the agent as
+        `call_purpose` and is woven into both the opening line and the
+        system prompt, so the agent states its reason instead of a
+        generic greeting.
+
+        Missing from this SDK until 5 Oct 2026 even though the README
+        advertised outbound calling.
+        """
+        return self._post("/v1/calls", _temizle({
+            "agent_id": agent_id,
+            "to_number": to_number,
+            "from_number": from_number,
+            "topic": topic,
+            "metadata": metadata,
+            "dynamic_variables": dynamic_variables,
+        }))
 
     def get(self, call_id: str) -> Dict:
         return self._get(f"/v1/calls/{call_id}")
@@ -411,6 +456,195 @@ class ChatsResource(_Resource):
             # Return the streaming HTTP response so the caller can iterate SSE lines.
             return self._http.post(f"/v1/chats/{session_id}/messages", json=data)
         return self._post(f"/v1/chats/{session_id}/messages", data)
+
+
+# ── Interpreters ──
+class InterpretersResource(_Resource):
+    """Live interpreter — two people each speak their own language.
+
+    Covers both delivery paths: a phone call that dials both sides, and a
+    browser session with a shareable link. Neither existed in this SDK
+    before 5 Oct 2026 even though the interpreter is a headline product.
+    """
+
+    def list(self, limit: int = 20, offset: int = 0) -> List[Dict]:
+        return self._get("/v1/interpreters", limit=limit, offset=offset)
+
+    def get(self, interpreter_id: str) -> Dict:
+        return self._get(f"/v1/interpreters/{interpreter_id}")
+
+    def create(
+        self,
+        name: str,
+        source_language: str,
+        target_language: str,
+        voice_id: str = None,
+        transparency: str = None,
+        phone_number: str = None,
+        callback_number: str = None,
+    ) -> Dict:
+        """Create an interpreter. Name and both languages are required.
+
+        `phone_number` is the line calls go out from — without it the
+        phone path cannot run, only the browser one.
+        """
+        return self._post("/v1/interpreters", _temizle({
+            "name": name,
+            "source_language": source_language,
+            "target_language": target_language,
+            "voice_id": voice_id,
+            "transparency": transparency,
+            "phone_number": phone_number,
+            "callback_number": callback_number,
+        }))
+
+    def update(self, interpreter_id: str, **fields) -> Dict:
+        return self._patch(f"/v1/interpreters/{interpreter_id}", _temizle(fields))
+
+    def delete(self, interpreter_id: str) -> bool:
+        return self._delete(f"/v1/interpreters/{interpreter_id}")
+
+    def calls(self, limit: int = 20, offset: int = 0) -> List[Dict]:
+        """Sessions run through any interpreter on the account."""
+        return self._get("/v1/interpreters/calls", limit=limit, offset=offset)
+
+    def call(
+        self, interpreter_id: str, target_number: str, initiator_number: str = None
+    ) -> Dict:
+        """Place a REAL interpreted phone call — both sides are dialled
+        and the call is charged. `target_number` is required."""
+        return self._post(f"/v1/interpreters/{interpreter_id}/call", _temizle({
+            "target_number": target_number,
+            "initiator_number": initiator_number,
+        }))
+
+    def enable_web(
+        self, interpreter_id: str, enabled: bool = True, requires_passcode: bool = None
+    ) -> Dict:
+        """Open or close the browser session link. Places no phone call."""
+        return self._post(f"/v1/interpreters/{interpreter_id}/web", _temizle({
+            "enabled": enabled,
+            "requires_passcode": requires_passcode,
+        }))
+
+    def end_web(self, interpreter_id: str) -> Dict:
+        return self._post(f"/v1/interpreters/{interpreter_id}/web/end")
+
+    def web_status(self, interpreter_id: str) -> Dict:
+        """Who is connected to the browser session right now."""
+        return self._get(f"/v1/interpreters/{interpreter_id}/web/live")
+
+    def create_passcode(self, interpreter_id: str) -> Dict:
+        """Mint a single-use join passcode for the browser session."""
+        return self._post(f"/v1/interpreters/{interpreter_id}/web/passcodes")
+
+
+# ── Numbers (search & buy) ──
+class NumbersResource(_Resource):
+    """Searching and buying phone numbers.
+
+    Separate from `phone_numbers`, which manages numbers you already own.
+    """
+
+    def allowed_countries(self) -> List[Dict]:
+        return self._get("/v1/numbers/allowed-countries")
+
+    def search(
+        self,
+        country: str,
+        locality: str = None,
+        area_code: str = None,
+        phone_number_type: str = None,
+        limit: int = 20,
+        provider: str = None,
+    ) -> List[Dict]:
+        """List purchasable numbers. Does NOT buy anything."""
+        return self._get(
+            "/v1/numbers/search",
+            country=country, locality=locality, area_code=area_code,
+            phone_number_type=phone_number_type, limit=limit, provider=provider,
+        )
+
+    def purchase(self, phone_number: str, agent_id: str = None, provider: str = None) -> Dict:
+        """BUYS the number: the balance is charged and monthly rent starts."""
+        return self._post("/v1/numbers/purchase", _temizle({
+            "phone_number": phone_number, "agent_id": agent_id, "provider": provider,
+        }))
+
+    def checkout(self, phone_number: str, agent_id: str = None, provider: str = None) -> Dict:
+        """Checkout link for buying a number — does not charge by itself."""
+        return self._post("/v1/numbers/checkout", _temizle({
+            "phone_number": phone_number, "agent_id": agent_id, "provider": provider,
+        }))
+
+    def release(self, phone_number: str) -> bool:
+        """PERMANENTLY releases the number; it leaves the account."""
+        return self._delete(f"/v1/numbers/{phone_number}")
+
+
+# ── SMS ──
+class SmsResource(_Resource):
+    def send(self, to: str, text: str, from_: str = None) -> Dict:
+        """`from_` trails an underscore: `from` is a Python keyword."""
+        return self._post("/v1/sms", _temizle({"to": to, "text": text, "from": from_}))
+
+    def list(
+        self, direction: str = None, number: str = None,
+        limit: int = 20, offset: int = 0,
+    ) -> List[Dict]:
+        return self._get(
+            "/v1/sms", direction=direction, number=number, limit=limit, offset=offset
+        )
+
+
+# ── Browser extension ──
+class ExtensionResource(_Resource):
+    """Chrome extension — live translation of a browser tab.
+
+    Device-scoped: the extension links a browser to the account, then
+    runs sessions against that link.
+    """
+
+    def config(self, device_id: str) -> Dict:
+        return self._get("/v1/ext/config", device_id=device_id)
+
+    def usage(self) -> Dict:
+        """Minutes used and remaining for the account."""
+        return self._get("/v1/ext/usage")
+
+    def link_request(self, device_id: str, email: str) -> Dict:
+        return self._post("/v1/ext/link/request", {"device_id": device_id, "email": email})
+
+    def link_confirm(self, token: str) -> Dict:
+        return self._post("/v1/ext/link/confirm", {"token": token})
+
+    def link_status(self, device_id: str) -> Dict:
+        return self._post("/v1/ext/link/status", {"device_id": device_id})
+
+    def link_attach(self, device_id: str) -> Dict:
+        return self._post("/v1/ext/link/attach", {"device_id": device_id})
+
+    def link_detach(self, device_id: str) -> Dict:
+        return self._post("/v1/ext/link/detach", {"device_id": device_id})
+
+    def session_start(
+        self, device_id: str, speak: str, hear: str, detect_language: bool = None
+    ) -> Dict:
+        return self._post("/v1/ext/session/start", _temizle({
+            "device_id": device_id, "speak": speak, "hear": hear,
+            "detect_language": detect_language,
+        }))
+
+    def session_heartbeat(self, device_id: str, session_id: str, elapsed_seconds: int) -> Dict:
+        return self._post("/v1/ext/session/heartbeat", {
+            "device_id": device_id, "session_id": session_id,
+            "elapsed_seconds": elapsed_seconds,
+        })
+
+    def session_end(self, device_id: str, session_id: str, reason: str = None) -> Dict:
+        return self._post("/v1/ext/session/end", _temizle({
+            "device_id": device_id, "session_id": session_id, "reason": reason,
+        }))
 
 
 # ── Payments ──

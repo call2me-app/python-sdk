@@ -73,3 +73,36 @@ def test_all_ilan_edilen_isimler_IMPORT_edilebilir():
 
     eksik = [ad for ad in call2me.__all__ if not hasattr(call2me, ad)]
     assert not eksik, f"__all__'da ilan edilip import edilmeyen: {eksik}"
+
+
+# ── Kapsam: kullanıcıya açık ürünler SDK'da olmalı ──────────────────────
+# ÖLÇÜLDÜ (5 Eki 2026): 278 uçtan yalnız 83'ü kapsanıyordu. Tercümanın
+# 11 ucunun HİÇBİRİ yoktu — oysa ürün sayfası, fiyat listesi ve MCP
+# sunucusu onu baş ürün olarak anlatıyor. Uzantı (10 uç), numara satın
+# alma (5), referans programı (10) da yoktu.
+#
+# `internal/*` ve `auth/*` KASITLI dışarıda: biri cron/webhook yüzeyi,
+# diğeri oturum açma — ikisi de SDK kullanıcısının işi değil.
+
+ACIK_URUNLER = {
+    "interpreters": "tercüman (telefon + web görüşme)",
+    "numbers": "numara arama ve satın alma",
+    "sms": "SMS gönderme",
+    "ext": "Chrome uzantısı",
+}
+
+
+def test_acik_urunlerin_hepsi_SDKda():
+    kaynak = ISTEMCI.read_text(encoding="utf-8")
+    eksik = [
+        f"{alan} ({aciklama})"
+        for alan, aciklama in ACIK_URUNLER.items()
+        if f"/v1/{alan}" not in kaynak
+    ]
+    assert not eksik, "SDK'da OLMAYAN ürünler:\n  " + "\n  ".join(eksik)
+
+
+def test_giden_arama_baslatilabiliyor():
+    """`POST /v1/calls` — README'ler 'outbound' diyor, uç olmalı."""
+    kaynak = ISTEMCI.read_text(encoding="utf-8")
+    assert 'self._post("/v1/calls"' in kaynak, "giden arama başlatma yok"

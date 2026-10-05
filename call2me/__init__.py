@@ -5,5 +5,5 @@ from .client import Call2Me
 # `from call2me import Agent` → ImportError (PyPI 1.4.0'da da vardı).
 from .models import Agent, Call, KnowledgeBase
 
-__version__ = "1.4.1"
+__version__ = "1.5.0"
 __all__ = ["Call2Me", "Agent", "Call", "KnowledgeBase"]
