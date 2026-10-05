@@ -37,6 +37,8 @@ class Call2Me:
         self.payments = PaymentsResource(self._http)
         self.events = EventsResource(self._http)
         self.voice_sessions = VoiceSessionsResource(self._http)
+        self.end_users = EndUsersResource(self._http)
+        self.webhooks = WebhooksResource(self._http)
 
     def close(self):
         self._http.close()
@@ -103,6 +105,9 @@ class AgentsResource(_Resource):
         return self._post("/v1/agents", data)
 
     def update(self, agent_id: str, **kwargs) -> Dict:
+        """Partial agent update. Pass public_metadata={"emoji","title","order","visible"}
+        to set the public card shown to end users via an ephemeral (agents:read) token —
+        GET /v1/agents with an eut_ token returns only these trimmed cards."""
         return self._patch(f"/v1/agents/{agent_id}", kwargs)
 
     def delete(self, agent_id: str) -> bool:
@@ -148,7 +153,7 @@ class KnowledgeBaseResource(_Resource):
         return self._delete(f"/v1/knowledge-base/{kb_id}")
 
     def add_source(self, kb_id: str, source_type: str, content: str, name: str = "") -> Dict:
-        return self._post(f"/v1/knowledge-base/{kb_id}/sources", {
+        return self._post(f"/v1/knowledge-base/{kb_id}/add-sources", {
             "type": source_type, "content": content, "name": name,
         })
 
@@ -256,7 +261,7 @@ class PhoneNumbersResource(_Resource):
         return self._post(f"/v1/phone-numbers/{number}/bind", {"agent_id": agent_id})
 
     def unbind_agent(self, number: str) -> Dict:
-        return self._post(f"/v1/phone-numbers/{number}/unbind")
+        return self._delete(f"/v1/phone-numbers/{number}/unbind")
 
 
 # ── SIP Trunks ──
@@ -292,7 +297,7 @@ class ApiKeysResource(_Resource):
         return self._post("/v1/api-keys", {"name": name, **kwargs})
 
     def revoke(self, key_id: str) -> Dict:
-        return self._patch(f"/v1/api-keys/{key_id}/revoke")
+        return self._delete(f"/v1/api-keys/{key_id}")
 
     def delete(self, key_id: str) -> bool:
         return self._delete(f"/v1/api-keys/{key_id}")
@@ -356,22 +361,55 @@ class VoicesResource(_Resource):
     def list(self) -> List[Dict]:
         return self._get("/v1/voices")
 
-    def providers(self) -> List[Dict]:
-        return self._get("/v1/voices/providers")
+    def providers(self) -> List[str]:
+        """Distinct voice providers, derived from the voice list.
+
+        There is no `/v1/voices/providers` endpoint — this method used to
+        call one and always returned 404 (measured against the live spec,
+        4 Oct 2026). The provider is a field on each voice, so the list is
+        derived here instead of breaking callers by removing the method.
+
+        Live values: `elevenlabs` (16 voices), `openai-realtime` (10).
+        """
+        ham = self.list()
+        sesler = ham.get("voices", []) if isinstance(ham, dict) else ham
+        return sorted({
+            v["provider"] for v in sesler if isinstance(v, dict) and v.get("provider")
+        })
 
 
 # ── Chats ──
 class ChatsResource(_Resource):
-    def list(self, limit: int = 50) -> List[Dict]:
-        return self._get("/v1/chats", limit=limit)
+    def create(self, agent_id: str, title: str = None, external_user_id: str = None, metadata: dict = None) -> Dict:
+        """Create a chat session. With an eut_ token, external_user_id is taken
+        from the token automatically (any value passed here is ignored)."""
+        data = {"agent_id": agent_id}
+        if title is not None:
+            data["title"] = title
+        if external_user_id is not None:
+            data["external_user_id"] = external_user_id
+        if metadata is not None:
+            data["metadata"] = metadata
+        return self._post("/v1/chats", data)
+
+    def list(self, limit: int = 50, external_user_id: str = None) -> List[Dict]:
+        return self._get("/v1/chats", limit=limit, external_user_id=external_user_id)
 
     def get(self, session_id: str) -> Dict:
         return self._get(f"/v1/chats/{session_id}")
 
-    def send_message(self, session_id: str, content: str, model: str = None) -> Dict:
+    def send_message(self, session_id: str, content: str, model: str = None, stream: bool = False):
+        """Send a chat message. With stream=True the server returns a raw
+        text/event-stream (SSE) response — iterate lines: `data: {"delta": "..."}`
+        chunks, then `data: {"done": true, "message_id", "cost_usd"}` and `data: [DONE]`.
+        Without stream, returns the completed {user_message, assistant_message}."""
         data = {"content": content}
         if model:
             data["model"] = model
+        if stream:
+            data["stream"] = True
+            # Return the streaming HTTP response so the caller can iterate SSE lines.
+            return self._http.post(f"/v1/chats/{session_id}/messages", json=data)
         return self._post(f"/v1/chats/{session_id}/messages", data)
 
 
@@ -384,7 +422,7 @@ class PaymentsResource(_Resource):
         return self._get("/v1/payments/history", limit=limit)
 
     def saved_cards(self) -> List[Dict]:
-        return self._get("/v1/payments/saved-cards")
+        return self._get("/v1/payments/methods")
 
     def auto_charge(self) -> Dict:
         return self._get("/v1/payments/auto-charge")
@@ -435,10 +473,53 @@ class EventsResource(_Resource):
 
 # ── Voice Sessions ──
 class VoiceSessionsResource(_Resource):
-    def create(self, agent_id: str, context: dict = None) -> Dict:
+    def create(self, agent_id: str, context: dict = None, external_user_id: str = None, metadata: dict = None, max_duration_sec: int = None) -> Dict:
         """Open a headless AI voice session with an agent.
 
         Returns {token, url, room_name, session_limit_sec}. Connect a LiveKit
         client with the returned token+url; the agent auto-joins and talks.
+        With an eut_ token, external_user_id is taken from the token automatically.
+        max_duration_sec sets a server-side time limit (the agent ends the call).
         """
-        return self._post("/v1/voice/sessions", {"agent_id": agent_id, "context": context})
+        body = {"agent_id": agent_id, "context": context}
+        if external_user_id is not None:
+            body["external_user_id"] = external_user_id
+        if metadata is not None:
+            body["metadata"] = metadata
+        if max_duration_sec is not None:
+            body["max_duration_sec"] = max_duration_sec
+        return self._post("/v1/voice/sessions", body)
+
+    def get(self, room_name: str) -> Dict:
+        """Fetch a voice session's detail + transcript: {status, duration_sec, cost_usd, transcript}.
+        With an eut_ token, only the session's own end user can read it."""
+        return self._get(f"/v1/voice/sessions/{room_name}")
+
+
+class WebhooksResource(_Resource):
+    def set(self, webhook_url: str, webhook_secret: str = None) -> Dict:
+        """Set (or replace) your tenant webhook URL + secret. Secret is
+        auto-generated if omitted. Returns the secret so you can verify signatures."""
+        body = {"webhook_url": webhook_url}
+        if webhook_secret is not None:
+            body["webhook_secret"] = webhook_secret
+        return self._put("/v1/webhooks", body)
+
+    def get(self) -> Dict:
+        """Get your webhook URL (secret is not returned, only has_secret flag)."""
+        return self._get("/v1/webhooks")
+
+
+class EndUsersResource(_Resource):
+    def create_token(self, external_id: str, scopes: list = None, expires_in: int = 3600, agent_ids: list = None) -> Dict:
+        """Mint an ephemeral end-user token (eut_) to hand to a mobile client.
+
+        Called with your sk_ key; the returned token is short-lived and scoped,
+        and its usage is billed to your (the tenant's) wallet.
+        """
+        body = {"expires_in": expires_in}
+        if scopes is not None:
+            body["scopes"] = scopes
+        if agent_ids is not None:
+            body["agent_ids"] = agent_ids
+        return self._post(f"/v1/end-users/{external_id}/tokens", body)
