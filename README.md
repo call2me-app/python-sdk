@@ -43,7 +43,7 @@ client = Call2Me(api_key="sk_call2me_...")
 # Create an agent
 agent = client.agents.create(
     agent_name="Sales Agent",
-    voice_id="elevenlabs-selin",
+    voice_id="elevenlabs-CFzl8WvPQ92EKMBs2hpS",
     language="tr-TR",
     system_prompt="You are a friendly sales agent."
 )
@@ -63,7 +63,7 @@ print(f"Balance: ${client.wallet.balance()['balance_usd']}")
 ```python
 client.agents.list(limit=100, offset=0)
 client.agents.get("agent_id")
-client.agents.create(agent_name="My Agent", voice_id="elevenlabs-selin", system_prompt="...")
+client.agents.create(agent_name="My Agent", voice_id="elevenlabs-CFzl8WvPQ92EKMBs2hpS", system_prompt="...")
 client.agents.update("agent_id", agent_name="New Name")
 client.agents.delete("agent_id")
 client.agents.duplicate("agent_id")

@@ -111,7 +111,7 @@ class AgentsResource(_Resource):
     def get(self, agent_id: str) -> Dict:
         return self._get(f"/v1/agents/{agent_id}")
 
-    def create(self, agent_name: str, voice_id: str = "elevenlabs-selin",
+    def create(self, agent_name: str, voice_id: str = "elevenlabs-CFzl8WvPQ92EKMBs2hpS",
                language: str = "tr-TR", system_prompt: str = "", **kwargs) -> Dict:
         data = {
             "agent_name": agent_name, "voice_id": voice_id, "language": language,
