@@ -67,39 +67,63 @@ def _temizle(veri: dict) -> dict:
     return {k: v for k, v in veri.items() if v is not None}
 
 
+class Call2MeError(httpx.HTTPStatusError):
+    """API error carrying the server's `detail` message.
+
+    Subclasses httpx.HTTPStatusError, so existing `except httpx.HTTPStatusError`
+    handlers (and `e.response.json()`) keep working.
+    """
+
+    def __init__(self, response: httpx.Response):
+        try:
+            detail = response.json().get("detail", response.text)
+        except ValueError:
+            detail = response.text
+        self.status_code = response.status_code
+        self.detail = detail
+        msg = detail if isinstance(detail, str) else str(detail)
+        super().__init__(f"Call2Me API Error {response.status_code}: {msg}",
+                         request=response.request, response=response)
+
+
+def _check(r: httpx.Response) -> None:
+    if r.is_error:
+        raise Call2MeError(r)
+
+
 class _Resource:
     def __init__(self, http: httpx.Client):
         self._http = http
 
     def _get(self, path: str, **params) -> Any:
         r = self._http.get(path, params={k: v for k, v in params.items() if v is not None})
-        r.raise_for_status()
+        _check(r)
         return r.json()
 
     def _post(self, path: str, data: Dict = None) -> Any:
         r = self._http.post(path, json=data or {})
-        r.raise_for_status()
+        _check(r)
         return r.json()
 
     def _patch(self, path: str, data: Dict = None) -> Any:
         r = self._http.patch(path, json=data or {})
-        r.raise_for_status()
+        _check(r)
         return r.json()
 
     def _put(self, path: str, data: Dict = None) -> Any:
         r = self._http.put(path, json=data or {})
-        r.raise_for_status()
+        _check(r)
         return r.json()
 
     def _delete(self, path: str) -> bool:
         r = self._http.delete(path)
-        r.raise_for_status()
+        _check(r)
         return True
 
     def _post_file(self, path: str, file_path: str, field: str = "file") -> Any:
         with open(file_path, "rb") as f:
             r = self._http.post(path, files={field: f})
-        r.raise_for_status()
+        _check(r)
         return r.json()
 
 
@@ -191,16 +215,31 @@ class KnowledgeBaseResource(_Resource):
     def get(self, kb_id: str) -> Dict:
         return self._get(f"/v1/knowledge-base/{kb_id}")
 
-    def create(self, name: str, description: str = "") -> Dict:
-        return self._post("/v1/knowledge-base", {"name": name, "description": description})
+    def create(self, name: str, description: str = "", texts: Optional[List[Dict]] = None,
+               urls: Optional[List[str]] = None, agent_id: Optional[str] = None) -> Dict:
+        """Create a knowledge base. `texts` = [{"title": ..., "text": ...}].
+
+        `description` is accepted for backward compatibility and ignored by the API.
+        """
+        data: Dict[str, Any] = {"knowledge_base_name": name}
+        if texts:
+            data["knowledge_base_texts"] = texts
+        if urls:
+            data["knowledge_base_urls"] = urls
+        if agent_id:
+            data["agent_id"] = agent_id
+        return self._post("/v1/knowledge-base", data)
 
     def delete(self, kb_id: str) -> bool:
         return self._delete(f"/v1/knowledge-base/{kb_id}")
 
     def add_source(self, kb_id: str, source_type: str, content: str, name: str = "") -> Dict:
-        return self._post(f"/v1/knowledge-base/{kb_id}/add-sources", {
-            "type": source_type, "content": content, "name": name,
-        })
+        """Add a source. source_type "text" (content = the text) or "url" (content = the URL)."""
+        if source_type == "url":
+            data = {"knowledge_base_urls": [content]}
+        else:
+            data = {"knowledge_base_texts": [{"title": name or "Untitled", "text": content}]}
+        return self._post(f"/v1/knowledge-base/{kb_id}/add-sources", data)
 
     def query(self, kb_id: str, query: str, top_k: int = 5) -> Dict:
         return self._post(f"/v1/knowledge-base/{kb_id}/query", {"query": query, "top_k": top_k})
@@ -664,9 +703,9 @@ class PaymentsResource(_Resource):
     def update_auto_charge(self, enabled: bool, threshold: float = None, amount: float = None) -> Dict:
         data = {"enabled": enabled}
         if threshold is not None:
-            data["threshold"] = threshold
+            data["threshold_usd"] = threshold
         if amount is not None:
-            data["charge_amount"] = amount
+            data["charge_amount_usd"] = amount
         return self._put("/v1/payments/auto-charge", data)
 
 

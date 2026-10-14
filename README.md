@@ -9,7 +9,7 @@ Build, deploy, and manage AI voice agents that handle real phone calls, extract 
 
 ## Features
 
-- **15 API Resources** — Full coverage of the Call2Me REST API
+- **22 API Resources** — Full coverage of the Call2Me REST API
 - **Voice Agents** — Create agents with 30+ AI models and custom voices
 - **Phone & Web Calls** — Inbound/outbound via SIP, browser, or chat widget
 - **Campaigns** — Bulk outbound calling with CSV upload
@@ -29,7 +29,7 @@ Requires Python 3.8+
 
 ## Getting Your API Key
 
-1. Sign up at [dash.call2me.app](https://dash.call2me.app/signup) — you get **$10 free credits**
+1. Sign up at [dash.call2me.app](https://dash.call2me.app/signup) — you get **$5 free credit**
 2. Go to **API Keys** in the dashboard
 3. Click **Create API Key** and copy your `sk_call2me_...` key
 
@@ -50,7 +50,7 @@ agent = client.agents.create(
 print(f"Agent: {agent['agent_id']}")
 
 # List calls
-for call in client.calls.list():
+for call in client.calls.list()["calls"]:
     print(f"{call['call_id']} — {call['call_status']}")
 
 # Check balance
@@ -83,9 +83,10 @@ client.calls.recording("call_id")
 ```python
 client.knowledge_bases.list()
 client.knowledge_bases.get("kb_id")
-client.knowledge_bases.create(name="FAQ", description="Product FAQ")
+client.knowledge_bases.create(name="FAQ", texts=[{"title": "Returns", "text": "..."}])
 client.knowledge_bases.delete("kb_id")
 client.knowledge_bases.add_source("kb_id", source_type="text", content="...", name="intro")
+client.knowledge_bases.add_source("kb_id", source_type="url", content="https://example.com/faq")
 client.knowledge_bases.query("kb_id", "What is the return policy?", top_k=5)
 ```
 
@@ -178,7 +179,7 @@ client.users.tenant_members(page=1, per_page=20)
 client.widgets.list()
 client.widgets.get("widget_id")
 client.widgets.create(agent_id="agent_id", name="Support Widget")
-client.widgets.update("widget_id", welcome_message="Hi!")
+client.widgets.update("widget_id", greeting_message="Hi!")
 client.widgets.delete("widget_id")
 client.widgets.chat("widget_id", "Hello, I need help")
 ```
@@ -195,6 +196,23 @@ Open an AI voice session with an agent from your own app:
 s = client.voice_sessions.create("agent_abc123")
 # s = {"token": ..., "url": "wss://livekit.call2me.app", "room_name": ..., "session_limit_sec": 3600}
 # Connect a LiveKit client with s["token"] + s["url"]; the agent auto-joins and talks.
+```
+
+### Interpreters
+```python
+it = client.interpreters.create(name="Supplier calls", source_language="en", target_language="zh")
+client.interpreters.enable_web(it["interpreter_id"])   # browser link, no app needed
+client.interpreters.web_status(it["interpreter_id"])
+client.interpreters.list() / get(id) / update(id, **fields) / delete(id) / calls()
+```
+
+### Numbers & SMS
+```python
+client.numbers.allowed_countries()
+client.numbers.search(country="US", area_code="415")
+client.numbers.checkout("+1415...", agent_id="...")   # paid
+client.sms.send("+1415...", "Hello", from_="+1650...")
+client.sms.list(direction="inbound")
 ```
 
 ### Chats
@@ -219,7 +237,7 @@ client.events.report(
     meta={"payment_id": "pay_abc", "provider": "paddle"},
 )
 
-# Admin-only query over archived (error+) events:
+# Admin-only, requires a dashboard session token (JWT) — sk_ API keys get 401:
 client.events.query(severity="error", hours=24)
 ```
 
@@ -230,13 +248,15 @@ Common `type` values: `js_error`, `unhandled_rejection`, `http_5xx`,
 ## Error Handling
 
 ```python
-import httpx
+from call2me import Call2MeError
 
 try:
     agent = client.agents.get("invalid_id")
-except httpx.HTTPStatusError as e:
-    print(f"Error {e.response.status_code}: {e.response.json()}")
+except Call2MeError as e:
+    print(e.status_code, e.detail)   # 404 Agent not found
 ```
+
+`Call2MeError` subclasses `httpx.HTTPStatusError`, so existing handlers keep working.
 
 ## Links
 
@@ -248,6 +268,15 @@ except httpx.HTTPStatusError as e:
 - **Support**: [support@call2me.app](mailto:support@call2me.app)
 
 ## Changelog
+
+### 1.5.2 (2026-10-14)
+- Fixed `knowledge_bases.create` / `add_source` (sent field names the API rejected with 422); `create` accepts `texts`, `urls`, `agent_id`.
+- Fixed `payments.update_auto_charge` (threshold and amount were silently ignored).
+- New `Call2MeError` with `status_code` and the API's `detail` message.
+- README quickstart fixed (`calls.list()` returns `{"calls": [...], "total": ...}`).
+
+### 1.5.0 – 1.5.1 (2026-10-05)
+- Added `interpreters`, `numbers`, `sms`, `extension` resources and `calls.create` (outbound calls).
 
 ### 1.4.0 (2026-07-02)
 - Added `voice_sessions.create(agent_id, context=None)` — open a headless AI voice session (LiveKit token) with an agent.
